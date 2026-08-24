@@ -1,0 +1,12 @@
+transaction_id,date,description,category,amount
+T001,2026-07-01,Office Supplies - Staples,Office,245.00
+T002,2026-07-02,AWS Cloud Services,IT,3200.00
+T003,2026-07-03,Marketing - Google Ads,Marketing,1800.00
+T004,2026-07-05,Payroll - Engineering,Payroll,42000.00
+T005,2026-07-06,Travel - Flight NYC,Travel,650.00
+T006,2026-07-08,Marketing - Google Ads,Marketing,6200.00
+T007,2026-07-10,Software License - Figma,IT,150.00
+T008,2026-07-12,Office Rent,Office,8000.00
+T009,2026-07-15,Consulting Fees,Professional Services,4950.00
+T010,2026-07-18,Payroll - Sales,Payroll,31000.00
+T011,2026-07-19,Marketing - Google Ads,Marketing,6200.00
