@@ -34,8 +34,38 @@ control of the final call.
 - **Data:** mock ledger/transaction data (CSV)
 
 ## Project Structure
-@'
-# Copy this file to .env and add your key. Never commit .env.
-# Without a key the app still runs using a rule-based fallback summary.
-GEMINI_API_KEY=your-key-here
-# GEMINI_MODEL=gemini-2.5-flash
+
+    autoclose-ai/
+    |-- frontend/    React dashboard
+    |-- backend/     API and agent logic
+    |-- data/        sample ledger data
+    +-- docs/        architecture notes
+
+## Getting Started
+Backend (terminal 1):
+
+    cd backend
+    pip install -r requirements.txt
+    python -m uvicorn main:app --reload --port 8000
+
+Frontend (terminal 2):
+
+    cd frontend
+    npm install
+    npm start
+
+Open http://localhost:3000.
+
+For the AI summary, create `backend/.env` containing `GEMINI_API_KEY=your-key`
+(see `backend/.env.example`). Without a key the app still runs and uses a
+rule-based summary. The AI only drafts text; it never changes ledger values
+or posts entries.
+
+## Team
+Jegathish
+Prem
+deepak
+venkatesh
+
+## Track
+Track 4: AI Finance Controller
