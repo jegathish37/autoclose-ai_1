@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -58,16 +59,21 @@ def generate_close_summary(reconciliation: dict, anomalies: list) -> str:
         'Do not claim that any ledger has been modified.\n\n'
         + json.dumps(payload, default=str, ensure_ascii=False)
     )
-    try:
-        client = genai.Client(api_key=key)
-        response = client.models.generate_content(
-            model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
-            contents=prompt,
-        )
-        if response.text and response.text.strip():
-            return response.text.strip()
-        return _fallback_summary(reconciliation, anomalies, 'empty Gemini response')
-    except Exception as exc:
-        # Avoid exposing API keys, request internals or account details in the UI.
-        return _fallback_summary(reconciliation, anomalies, type(exc).__name__)
-    print(f"GEMINI ERROR: {type(e).__name__}: {e}", flush=True)
+    last_error = 'unknown error'
+    for attempt in range(3):
+        try:
+            client = genai.Client(api_key=key)
+            response = client.models.generate_content(
+                model=os.getenv('GEMINI_MODEL', 'gemini-3.8-flash'),
+                contents=prompt,
+            )
+            if response.text and response.text.strip():
+                return response.text.strip()
+            last_error = 'empty Gemini response'
+        except Exception as exc:
+            last_error = type(exc).__name__
+            # Details go to the backend console only, never to the UI.
+            print(f'GEMINI ERROR (attempt {attempt + 1}/3): {type(exc).__name__}: {exc}', flush=True)
+        if attempt < 2:
+            time.sleep(2 * (attempt + 1))
+    return _fallback_summary(reconciliation, anomalies, last_error)
