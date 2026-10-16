@@ -1,217 +1,28 @@
-import React, { useState } from "react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer,
-} from "recharts";
+import React, { useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
+import './styles.css';
 
-const API = "http://localhost:8000";
-
-const statusStyle = {
-  pending: { background: "#fef3c7", color: "#92400e" },
-  approved: { background: "#dcfce7", color: "#166534" },
-  rejected: { background: "#fee2e2", color: "#991b1b" },
-};
-
-const money = (n) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-
-function Tile({ label, value, color }) {
-  return (
-    <div style={{ flex: 1, minWidth: 150, background: "#f8fafc", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
-      <div style={{ fontSize: 13, color: "#64748b" }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: color || "#0f172a" }}>{value}</div>
-    </div>
-  );
-}
-
-export default function App() {
-  const [result, setResult] = useState(null);
-  const [audit, setAudit] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [fileA, setFileA] = useState(null);
-  const [fileB, setFileB] = useState(null);
-
-  const loadAudit = async () => {
-    try {
-      const res = await fetch(`${API}/audit`);
-      setAudit(await res.json());
-    } catch (e) {
-      /* audit is non-critical */
-    }
-  };
-
-  const run = async (useUpload) => {
-    setLoading(true);
-    setError(null);
-    try {
-      let res;
-      if (useUpload) {
-        const form = new FormData();
-        form.append("ledger_a", fileA);
-        form.append("ledger_b", fileB);
-        res = await fetch(`${API}/run-close-upload`, { method: "POST", body: form });
-      } else {
-        res = await fetch(`${API}/run-close`);
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `Server returned ${res.status}`);
-      }
-      setResult(await res.json());
-      await loadAudit();
-    } catch (err) {
-      setError(`Could not run close: ${err.message}. Is the backend running on ${API}?`);
-    }
-    setLoading(false);
-  };
-
-  const decide = async (item, decision) => {
-    await fetch(`${API}/review/${item.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
-    });
-    setResult((prev) => {
-      const review_items = prev.review_items.map((i) =>
-        i.id === item.id ? { ...i, status: decision } : i
-      );
-      return {
-        ...prev,
-        review_items,
-        ready_to_post: review_items.every((i) => i.status === "approved"),
-      };
-    });
-    loadAudit();
-  };
-
-  const btn = { padding: "10px 20px", color: "white", border: "none", borderRadius: 6, cursor: "pointer" };
-
-  return (
-    <div style={{ maxWidth: 940, margin: "40px auto", fontFamily: "sans-serif", padding: "0 16px" }}>
-      <h1 style={{ marginBottom: 4 }}>AutoClose AI</h1>
-      <p style={{ color: "#555", marginTop: 0 }}>
-        An AI agent that reconciles ledgers, flags problems and drafts the close report. You approve before anything is posted.
-      </p>
-
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={() => run(false)} disabled={loading} style={{ ...btn, background: "#2563eb" }}>
-          {loading ? "Running close..." : "Run Close (sample data)"}
-        </button>
-        <span style={{ color: "#94a3b8" }}>or upload your own:</span>
-        <label style={{ fontSize: 13 }}>
-          Ledger A <input type="file" accept=".csv" onChange={(e) => setFileA(e.target.files[0])} />
-        </label>
-        <label style={{ fontSize: 13 }}>
-          Ledger B <input type="file" accept=".csv" onChange={(e) => setFileB(e.target.files[0])} />
-        </label>
-        <button
-          onClick={() => run(true)}
-          disabled={loading || !fileA || !fileB}
-          style={{ ...btn, background: !fileA || !fileB ? "#94a3b8" : "#0f766e" }}
-        >
-          Run on uploads
-        </button>
-      </div>
-      <p style={{ fontSize: 12, color: "#94a3b8" }}>
-        CSV columns required: transaction_id, date, description, category, amount
-      </p>
-
-      {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
-
-      {result && (
-        <div style={{ marginTop: 24 }}>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Tile label="Transactions" value={result.stats.total_transactions} />
-            <Tile label="Auto-matched" value={`${result.stats.match_rate}%`} color="#166534" />
-            <Tile label="Needs review" value={result.stats.needs_review} color={result.stats.needs_review ? "#b45309" : "#166534"} />
-            <Tile label="Net variance" value={money(result.stats.net_variance)} />
-          </div>
-
-          <h2>Spend by Category</h2>
-          <div style={{ height: 300 }}>
-            <ResponsiveContainer>
-              <BarChart data={result.category_variance}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="category" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(v) => `$${v / 1000}k`} />
-                <Tooltip formatter={(v) => money(v)} />
-                <Legend />
-                <Bar dataKey="ledger_a" name="Ledger A" fill="#94a3b8" />
-                <Bar dataKey="ledger_b" name="Ledger B" fill="#2563eb" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <h2>Variance by Category</h2>
-          <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                <th>Category</th><th>Ledger A</th><th>Ledger B</th><th>Variance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.category_variance.map((r) => (
-                <tr key={r.category} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <td>{r.category}</td>
-                  <td>{money(r.ledger_a)}</td>
-                  <td>{money(r.ledger_b)}</td>
-                  <td style={{ color: r.variance ? "#b91c1c" : "#166534", fontWeight: 600 }}>
-                    {r.variance ? money(r.variance) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h2>AI Summary</h2>
-          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", background: "#f5f5f5", padding: 16, borderRadius: 8 }}>
-            {result.summary}
-          </pre>
-
-          <h2>Needs Review ({result.review_items.length})</h2>
-          {result.review_items.length === 0 && <p>Nothing to review. Clean close.</p>}
-          {result.review_items.map((item) => (
-            <div key={item.id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <strong>{item.transaction_id} — {item.description}</strong>
-                <span style={{ ...statusStyle[item.status], padding: "2px 10px", borderRadius: 12, fontSize: 13 }}>
-                  {item.status}
-                </span>
-              </div>
-              <div style={{ color: "#555", margin: "6px 0" }}>
-                <em>{item.type.replace(/_/g, " ")}</em>: {item.detail}
-              </div>
-              <button onClick={() => decide(item, "approved")} style={{ marginRight: 8 }}>Approve</button>
-              <button onClick={() => decide(item, "rejected")}>Reject</button>
-            </div>
-          ))}
-
-          <p style={{ fontWeight: 600, color: result.ready_to_post ? "#166534" : "#b45309" }}>
-            {result.ready_to_post
-              ? "All items approved. Ready to post."
-              : "Not ready to post: pending or rejected items remain."}
-          </p>
-
-          <h2>Audit Trail</h2>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                <th>Time</th><th>Actor</th><th>Action</th><th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...audit].reverse().slice(0, 25).map((e, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <td>{new Date(e.timestamp).toLocaleTimeString()}</td>
-                  <td>{e.actor}</td>
-                  <td>{e.action}</td>
-                  <td>{JSON.stringify(e.details)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+const API = 'http://localhost:8000';
+const money = (n) => Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const nav = [['overview','◈','Overview'],['analytics','▥','Analytics'],['reviews','◇','Review queue'],['summary','✦','AI close report'],['audit','≡','Audit trail']];
+const icons = { Transactions:'▦', 'Auto-matched':'✓', 'Needs review':'!', 'Net variance':'↗' };
+function Badge({status}) { return <span className={`badge ${String(status || 'pending').toLowerCase()}`}>{status || 'pending'}</span>; }
+function Metric({label,value,sub}) {return <div className="metric"><div className="metric-top"><span>{label}</span><span className="metric-icon">{icons[label]}</span></div><strong>{value}</strong><small>{sub}</small></div>}
+function Panel({title,subtitle,children,extra}) {return <section className="panel"><div className="panel-head"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{extra}</div>{children}</section>}
+export default function App(){
+ const [result,setResult]=useState(null),[audit,setAudit]=useState([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[fileA,setFileA]=useState(null),[fileB,setFileB]=useState(null),[active,setActive]=useState('overview'),[busyId,setBusyId]=useState(null);
+ const loadAudit=async()=>{try{const res=await fetch(`${API}/audit`);if(res.ok){const data=await res.json();setAudit(Array.isArray(data)?data:[]);}}catch(e){/* non-critical */}};
+ const run=async(upload)=>{setLoading(true);setError('');try{let res;if(upload){if(!fileA||!fileB)throw new Error('Select both ledger CSV files first');const form=new FormData();form.append('ledger_a',fileA);form.append('ledger_b',fileB);res=await fetch(`${API}/run-close-upload`,{method:'POST',body:form});}else{res=await fetch(`${API}/run-close`);}if(!res.ok){const body=await res.json().catch(()=>({}));throw new Error(body.detail||`Server returned ${res.status}`);}setResult(await res.json());await loadAudit();setActive('overview');}catch(e){setError(`Could not run close: ${e.message}. Check that the backend is running at ${API}.`);}finally{setLoading(false);}};
+ const decide=async(item,decision)=>{setBusyId(item.id);setError('');try{const res=await fetch(`${API}/review/${item.id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});if(!res.ok){const body=await res.json().catch(()=>({}));throw new Error(body.detail||`Server returned ${res.status}`);}setResult(prev=>{if(!prev)return prev;const review_items=(prev.review_items||[]).map(i=>i.id===item.id?{...i,status:decision}:i);return {...prev,review_items,ready_to_post:review_items.every(i=>i.status==='approved')};});await loadAudit();}catch(e){setError(`Review update failed: ${e.message}`);}finally{setBusyId(null);}};
+ const stats=result?.stats||{},rows=result?.category_variance||[],reviews=result?.review_items||[];
+ const show=(section)=>active==='overview'||active===section;
+ return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">✦</span><div><b>AutoClose<span> AI</span></b><small>FINANCE INTELLIGENCE</small></div></div><div className="nav-caption">WORKSPACE</div><nav>{nav.map(([id,icon,label])=><button key={id} className={`nav-item ${active===id?'selected':''}`} onClick={()=>setActive(id)}><span>{icon}</span>{label}{id==='reviews'&&reviews.filter(r=>r.status==='pending').length>0&&<em>{reviews.filter(r=>r.status==='pending').length}</em>}</button>)}</nav><div className="sidebar-bottom"><span className="status-dot"/> Local workspace <small>Backend: localhost:8000</small></div></aside><main className="main"><header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> {nav.find(n=>n[0]===active)?.[2]}</div><div className="top-right"><span className="live-pill"><span className="status-dot"/> FINANCIAL OPERATIONS</span><div className="avatar">AC</div></div></header><div className="content"><div className="hero"><div><div className="eyebrow">✦ AI-POWERED FINANCIAL CLOSE</div><h1>{active==='overview'?'Financial command center':nav.find(n=>n[0]===active)?.[2]}</h1><p>Reconcile ledgers, investigate exceptions, and confidently close your books.</p></div><button className="primary" onClick={()=>run(false)} disabled={loading}>{loading?'⟳ Processing…':'✦ Run sample close'}</button></div>
+ {error&&<div className="alert" role="alert">⚠ {error}</div>}
+ {show('overview')&&<><div className="metrics"><Metric label="Transactions" value={result?Number(stats.total_transactions||0).toLocaleString():'—'} sub="Processed across ledgers"/><Metric label="Auto-matched" value={result?`${stats.match_rate}%`:'—'} sub="Reconciliation match rate"/><Metric label="Needs review" value={result?stats.needs_review:'—'} sub="Exceptions requiring action"/><Metric label="Net variance" value={result?money(stats.net_variance):'—'} sub="Difference across ledgers"/></div><Panel title="Start a reconciliation" subtitle="Upload two CSV ledgers or use the sample dataset" extra={<span className="subtle-tag">SECURE WORKFLOW</span>}><div className="upload-grid"><label className="upload-box"><span className="upload-icon">↥</span><b>Ledger A</b><small>{fileA?.name||'Choose a CSV file'}</small><input type="file" accept=".csv" onChange={e=>setFileA(e.target.files?.[0]||null)}/></label><label className="upload-box"><span className="upload-icon">↥</span><b>Ledger B</b><small>{fileB?.name||'Choose a CSV file'}</small><input type="file" accept=".csv" onChange={e=>setFileB(e.target.files?.[0]||null)}/></label><div className="upload-action"><p>Ready to reconcile?</p><small>Required CSV columns: transaction_id, date, description, category, amount</small><button className="primary" onClick={()=>run(true)} disabled={loading||!fileA||!fileB}>{loading?'Processing…':'Run uploaded ledgers →'}</button></div></div></Panel></>}
+ {!result&&<div className="empty"><div className="empty-icon">✦</div><h2>Your financial insights await</h2><p>Run a sample close or upload your ledgers to populate analytics, reviews, and the audit trail.</p></div>}
+ {result&&<>{show('analytics')&&<div className="analytics-grid"><Panel title="Spend by category" subtitle="Ledger comparison across expense categories" extra={<span className="subtle-tag">LIVE RESULTS</span>}><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} margin={{top:12,right:12,left:0,bottom:12}}><CartesianGrid stroke="#25334b" strokeDasharray="3 5" vertical={false}/><XAxis dataKey="category" stroke="#8c9bb4" tick={{fontSize:11}} tickLine={false} axisLine={false}/><YAxis stroke="#8c9bb4" tick={{fontSize:11}} tickLine={false} axisLine={false} tickFormatter={v=>`$${Number(v)/1000}k`}/><Tooltip contentStyle={{background:'#17233a',border:'1px solid #34425a',borderRadius:12,color:'#f0f5ff'}} formatter={v=>money(v)}/><Bar dataKey="ledger_a" name="Ledger A" fill="#5274bd" radius={[5,5,0,0]}/><Bar dataKey="ledger_b" name="Ledger B" fill="#5bd4c6" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div><div className="legend"><span><i style={{background:'#5274bd'}}/> Ledger A</span><span><i style={{background:'#5bd4c6'}}/> Ledger B</span></div></Panel><Panel title="Close readiness" subtitle="Approval status of flagged transactions"><div className="readiness"><div className={`readiness-ring ${result.ready_to_post?'ready':''}`}>{reviews.length?Math.round(reviews.filter(r=>r.status==='approved').length/reviews.length*100):100}%</div><h3>{result.ready_to_post?'Ready to post':'Review in progress'}</h3><p>{reviews.filter(r=>r.status!=='approved').length} review items remaining</p></div></Panel></div>}{show('analytics')&&<Panel title="Category variance" subtitle="Detailed ledger reconciliation breakdown"><div className="table-scroll"><table><thead><tr><th>Category</th><th>Ledger A</th><th>Ledger B</th><th>Variance</th></tr></thead><tbody>{rows.map((r,i)=><tr key={`${r.category}-${i}`}><td className="strong-cell">{r.category}</td><td>{money(r.ledger_a)}</td><td>{money(r.ledger_b)}</td><td className={Number(r.variance)?'variance':'positive'}>{Number(r.variance)?money(r.variance):'—'}</td></tr>)}</tbody></table></div></Panel>}
+ {show('summary')&&<Panel title="AI close report" subtitle="Agent-generated financial reconciliation summary" extra={<span className="ai-label">✦ AI INSIGHTS</span>}><div className="summary">{result.summary||'No summary returned.'}</div></Panel>}
+ {show('reviews')&&<Panel title="Review queue" subtitle="Approve or reject exceptions before posting" extra={<span className="subtle-tag">{reviews.length} ITEMS</span>}>{reviews.length===0?<div className="empty-inline">✓ No exceptions found. Clean close.</div>:<div className="review-list">{reviews.map(item=><div className="review" key={item.id}><div className="review-info"><div className="review-title"><b>{item.transaction_id} · {item.description}</b><Badge status={item.status}/></div><p><span>{String(item.type||'issue').replace(/_/g,' ')}</span> · {item.detail}</p></div><div className="review-actions"><button className="approve" disabled={busyId===item.id} onClick={()=>decide(item,'approved')}>✓ Approve</button><button className="reject" disabled={busyId===item.id} onClick={()=>decide(item,'rejected')}>✕ Reject</button></div></div>)}</div>}<div className={`posting ${result.ready_to_post?'good':''}`}>{result.ready_to_post?'✓ All items approved. Ready to post.':'◷ Not ready to post: pending or rejected items remain.'}</div></Panel>}
+ {show('audit')&&<Panel title="Audit trail" subtitle="Recent actions and system events" extra={<button className="ghost" onClick={loadAudit}>↻ Refresh</button>}><div className="table-scroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead><tbody>{[...audit].reverse().slice(0,25).map((e,i)=><tr key={i}><td>{e.timestamp?new Date(e.timestamp).toLocaleString():'—'}</td><td className="strong-cell">{e.actor}</td><td>{e.action}</td><td className="detail">{JSON.stringify(e.details)}</td></tr>)}</tbody></table>{!audit.length&&<div className="empty-inline">No audit events returned.</div>}</div></Panel>}</>}
+ <footer>AutoClose AI <span>·</span> Intelligent finance operations <span>·</span> Human-approved closing</footer></div></main></div>;
 }

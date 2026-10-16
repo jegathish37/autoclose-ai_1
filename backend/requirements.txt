@@ -2,4 +2,5 @@ fastapi
 uvicorn
 pandas
 python-multipart
-anthropic
+google-genai
+python-dotenv
