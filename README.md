@@ -72,7 +72,9 @@ Open http://localhost:3000. To use Claude for the summary, set
 without it the app uses a built-in summary.
 
 ## Team
-_Add your team names here_
-
+Jegathish
+Prem 
+deepak
+venkatesh
 ## Track
 Track 4: AI Finance Controller
