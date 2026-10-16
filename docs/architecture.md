@@ -1,13 +1,13 @@
-# Architecture
+﻿# Architecture
 
 ```
-CSV ledgers -> reconcile.py -> detect_anomalies -> narrative.py (Claude) -> review queue -> audit log
+CSV ledgers -> reconcile.py -> detect_anomalies -> narrative.py (Gemini) -> review queue -> audit log
                                                                               |
                                               React dashboard <-- FastAPI <---+
 ```
 
 - `backend/reconcile.py`: matching, duplicate/outlier detection, category variance
-- `backend/narrative.py`: Claude-written summary with offline fallback
+- `backend/narrative.py`: Gemini-written summary with offline fallback
 - `backend/pipeline.py`: runs the whole close and builds the review items
 - `backend/store.py`: JSON-file store for review decisions and the audit log
 - `backend/main.py`: FastAPI endpoints (`/run-close`, `/run-close-upload`, `/review/{id}`, `/audit`)
