@@ -1,28 +1,265 @@
-import React, { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
+import React, { useCallback, useEffect, useState } from 'react';
 import './styles.css';
 
-const API = 'http://localhost:8000';
-const money = (n) => Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-const nav = [['overview','◈','Overview'],['analytics','▥','Analytics'],['reviews','◇','Review queue'],['summary','✦','AI close report'],['audit','≡','Audit trail']];
-const icons = { Transactions:'▦', 'Auto-matched':'✓', 'Needs review':'!', 'Net variance':'↗' };
-function Badge({status}) { return <span className={`badge ${String(status || 'pending').toLowerCase()}`}>{status || 'pending'}</span>; }
-function Metric({label,value,sub}) {return <div className="metric"><div className="metric-top"><span>{label}</span><span className="metric-icon">{icons[label]}</span></div><strong>{value}</strong><small>{sub}</small></div>}
-function Panel({title,subtitle,children,extra}) {return <section className="panel"><div className="panel-head"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{extra}</div>{children}</section>}
-export default function App(){
- const [result,setResult]=useState(null),[audit,setAudit]=useState([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[fileA,setFileA]=useState(null),[fileB,setFileB]=useState(null),[active,setActive]=useState('overview'),[busyId,setBusyId]=useState(null);
- const loadAudit=async()=>{try{const res=await fetch(`${API}/audit`);if(res.ok){const data=await res.json();setAudit(Array.isArray(data)?data:[]);}}catch(e){/* non-critical */}};
- const run=async(upload)=>{setLoading(true);setError('');try{let res;if(upload){if(!fileA||!fileB)throw new Error('Select both ledger CSV files first');const form=new FormData();form.append('ledger_a',fileA);form.append('ledger_b',fileB);res=await fetch(`${API}/run-close-upload`,{method:'POST',body:form});}else{res=await fetch(`${API}/run-close`);}if(!res.ok){const body=await res.json().catch(()=>({}));throw new Error(body.detail||`Server returned ${res.status}`);}setResult(await res.json());await loadAudit();setActive('overview');}catch(e){setError(`Could not run close: ${e.message}. Check that the backend is running at ${API}.`);}finally{setLoading(false);}};
- const decide=async(item,decision)=>{setBusyId(item.id);setError('');try{const res=await fetch(`${API}/review/${item.id}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});if(!res.ok){const body=await res.json().catch(()=>({}));throw new Error(body.detail||`Server returned ${res.status}`);}setResult(prev=>{if(!prev)return prev;const review_items=(prev.review_items||[]).map(i=>i.id===item.id?{...i,status:decision}:i);return {...prev,review_items,ready_to_post:review_items.every(i=>i.status==='approved')};});await loadAudit();}catch(e){setError(`Review update failed: ${e.message}`);}finally{setBusyId(null);}};
- const stats=result?.stats||{},rows=result?.category_variance||[],reviews=result?.review_items||[];
- const show=(section)=>active==='overview'||active===section;
- return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">✦</span><div><b>AutoClose<span> AI</span></b><small>FINANCE INTELLIGENCE</small></div></div><div className="nav-caption">WORKSPACE</div><nav>{nav.map(([id,icon,label])=><button key={id} className={`nav-item ${active===id?'selected':''}`} onClick={()=>setActive(id)}><span>{icon}</span>{label}{id==='reviews'&&reviews.filter(r=>r.status==='pending').length>0&&<em>{reviews.filter(r=>r.status==='pending').length}</em>}</button>)}</nav><div className="sidebar-bottom"><span className="status-dot"/> Local workspace <small>Backend: localhost:8000</small></div></aside><main className="main"><header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> {nav.find(n=>n[0]===active)?.[2]}</div><div className="top-right"><span className="live-pill"><span className="status-dot"/> FINANCIAL OPERATIONS</span><div className="avatar">AC</div></div></header><div className="content"><div className="hero"><div><div className="eyebrow">✦ AI-POWERED FINANCIAL CLOSE</div><h1>{active==='overview'?'Financial command center':nav.find(n=>n[0]===active)?.[2]}</h1><p>Reconcile ledgers, investigate exceptions, and confidently close your books.</p></div><button className="primary" onClick={()=>run(false)} disabled={loading}>{loading?'⟳ Processing…':'✦ Run sample close'}</button></div>
- {error&&<div className="alert" role="alert">⚠ {error}</div>}
- {show('overview')&&<><div className="metrics"><Metric label="Transactions" value={result?Number(stats.total_transactions||0).toLocaleString():'—'} sub="Processed across ledgers"/><Metric label="Auto-matched" value={result?`${stats.match_rate}%`:'—'} sub="Reconciliation match rate"/><Metric label="Needs review" value={result?stats.needs_review:'—'} sub="Exceptions requiring action"/><Metric label="Net variance" value={result?money(stats.net_variance):'—'} sub="Difference across ledgers"/></div><Panel title="Start a reconciliation" subtitle="Upload two CSV ledgers or use the sample dataset" extra={<span className="subtle-tag">SECURE WORKFLOW</span>}><div className="upload-grid"><label className="upload-box"><span className="upload-icon">↥</span><b>Ledger A</b><small>{fileA?.name||'Choose a CSV file'}</small><input type="file" accept=".csv" onChange={e=>setFileA(e.target.files?.[0]||null)}/></label><label className="upload-box"><span className="upload-icon">↥</span><b>Ledger B</b><small>{fileB?.name||'Choose a CSV file'}</small><input type="file" accept=".csv" onChange={e=>setFileB(e.target.files?.[0]||null)}/></label><div className="upload-action"><p>Ready to reconcile?</p><small>Required CSV columns: transaction_id, date, description, category, amount</small><button className="primary" onClick={()=>run(true)} disabled={loading||!fileA||!fileB}>{loading?'Processing…':'Run uploaded ledgers →'}</button></div></div></Panel></>}
- {!result&&<div className="empty"><div className="empty-icon">✦</div><h2>Your financial insights await</h2><p>Run a sample close or upload your ledgers to populate analytics, reviews, and the audit trail.</p></div>}
- {result&&<>{show('analytics')&&<div className="analytics-grid"><Panel title="Spend by category" subtitle="Ledger comparison across expense categories" extra={<span className="subtle-tag">LIVE RESULTS</span>}><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} margin={{top:12,right:12,left:0,bottom:12}}><CartesianGrid stroke="#25334b" strokeDasharray="3 5" vertical={false}/><XAxis dataKey="category" stroke="#8c9bb4" tick={{fontSize:11}} tickLine={false} axisLine={false}/><YAxis stroke="#8c9bb4" tick={{fontSize:11}} tickLine={false} axisLine={false} tickFormatter={v=>`$${Number(v)/1000}k`}/><Tooltip contentStyle={{background:'#17233a',border:'1px solid #34425a',borderRadius:12,color:'#f0f5ff'}} formatter={v=>money(v)}/><Bar dataKey="ledger_a" name="Ledger A" fill="#5274bd" radius={[5,5,0,0]}/><Bar dataKey="ledger_b" name="Ledger B" fill="#5bd4c6" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div><div className="legend"><span><i style={{background:'#5274bd'}}/> Ledger A</span><span><i style={{background:'#5bd4c6'}}/> Ledger B</span></div></Panel><Panel title="Close readiness" subtitle="Approval status of flagged transactions"><div className="readiness"><div className={`readiness-ring ${result.ready_to_post?'ready':''}`}>{reviews.length?Math.round(reviews.filter(r=>r.status==='approved').length/reviews.length*100):100}%</div><h3>{result.ready_to_post?'Ready to post':'Review in progress'}</h3><p>{reviews.filter(r=>r.status!=='approved').length} review items remaining</p></div></Panel></div>}{show('analytics')&&<Panel title="Category variance" subtitle="Detailed ledger reconciliation breakdown"><div className="table-scroll"><table><thead><tr><th>Category</th><th>Ledger A</th><th>Ledger B</th><th>Variance</th></tr></thead><tbody>{rows.map((r,i)=><tr key={`${r.category}-${i}`}><td className="strong-cell">{r.category}</td><td>{money(r.ledger_a)}</td><td>{money(r.ledger_b)}</td><td className={Number(r.variance)?'variance':'positive'}>{Number(r.variance)?money(r.variance):'—'}</td></tr>)}</tbody></table></div></Panel>}
- {show('summary')&&<Panel title="AI close report" subtitle="Agent-generated financial reconciliation summary" extra={<span className="ai-label">✦ AI INSIGHTS</span>}><div className="summary">{result.summary||'No summary returned.'}</div></Panel>}
- {show('reviews')&&<Panel title="Review queue" subtitle="Approve or reject exceptions before posting" extra={<span className="subtle-tag">{reviews.length} ITEMS</span>}>{reviews.length===0?<div className="empty-inline">✓ No exceptions found. Clean close.</div>:<div className="review-list">{reviews.map(item=><div className="review" key={item.id}><div className="review-info"><div className="review-title"><b>{item.transaction_id} · {item.description}</b><Badge status={item.status}/></div><p><span>{String(item.type||'issue').replace(/_/g,' ')}</span> · {item.detail}</p></div><div className="review-actions"><button className="approve" disabled={busyId===item.id} onClick={()=>decide(item,'approved')}>✓ Approve</button><button className="reject" disabled={busyId===item.id} onClick={()=>decide(item,'rejected')}>✕ Reject</button></div></div>)}</div>}<div className={`posting ${result.ready_to_post?'good':''}`}>{result.ready_to_post?'✓ All items approved. Ready to post.':'◷ Not ready to post: pending or rejected items remain.'}</div></Panel>}
- {show('audit')&&<Panel title="Audit trail" subtitle="Recent actions and system events" extra={<button className="ghost" onClick={loadAudit}>↻ Refresh</button>}><div className="table-scroll"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Details</th></tr></thead><tbody>{[...audit].reverse().slice(0,25).map((e,i)=><tr key={i}><td>{e.timestamp?new Date(e.timestamp).toLocaleString():'—'}</td><td className="strong-cell">{e.actor}</td><td>{e.action}</td><td className="detail">{JSON.stringify(e.details)}</td></tr>)}</tbody></table>{!audit.length&&<div className="empty-inline">No audit events returned.</div>}</div></Panel>}</>}
- <footer>AutoClose AI <span>·</span> Intelligent finance operations <span>·</span> Human-approved closing</footer></div></main></div>;
+import { fetchAudit, runSampleClose, runUploadClose, submitDecision } from './api';
+import { money } from './format';
+
+import Sidebar, { NAV_ITEMS } from './components/Sidebar';
+import Topbar from './components/Topbar';
+import Icon from './components/Icon';
+import Panel from './components/Panel';
+import MetricCard from './components/MetricCard';
+import UploadPanel from './components/UploadPanel';
+import SpendChart from './components/SpendChart';
+import MatchDonut from './components/MatchDonut';
+import VarianceChart from './components/VarianceChart';
+import ReadinessRing from './components/ReadinessRing';
+import VarianceTable from './components/VarianceTable';
+import SummaryPanel from './components/SummaryPanel';
+import ReviewQueue from './components/ReviewQueue';
+import AuditTable from './components/AuditTable';
+import EmptyState from './components/EmptyState';
+import { PanelSkeleton } from './components/Skeleton';
+
+export default function App() {
+  const [result, setResult] = useState(null); // latest response from the backend
+  const [audit, setAudit] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [fileA, setFileA] = useState(null);
+  const [fileB, setFileB] = useState(null);
+  const [active, setActive] = useState('overview');
+  const [busyId, setBusyId] = useState(null); // review item being saved
+  const [backend, setBackend] = useState('unknown'); // unknown | online | offline
+
+  const loadAudit = useCallback(async () => {
+    try {
+      const data = await fetchAudit();
+      setAudit(Array.isArray(data) ? data : []);
+      setBackend('online');
+    } catch (e) {
+      if (e.network) setBackend('offline');
+    }
+  }, []);
+
+  // Also tells us straight away whether the backend is reachable.
+  useEffect(() => {
+    loadAudit();
+  }, [loadAudit]);
+
+  const runClose = async (useUploads) => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = useUploads ? await runUploadClose(fileA, fileB) : await runSampleClose();
+      setResult(data);
+      setBackend('online');
+      await loadAudit();
+      setActive('overview');
+    } catch (e) {
+      if (e.network) {
+        setBackend('offline');
+        setError(`${e.message}. Start it with: python -m uvicorn main:app --reload --port 8000`);
+      } else {
+        setError(`Could not run close: ${e.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const decide = async (item, decision) => {
+    setBusyId(item.id);
+    setError('');
+    try {
+      await submitDecision(item.id, decision);
+      setResult((prev) => {
+        if (!prev) return prev;
+        const review_items = prev.review_items.map((i) =>
+          i.id === item.id ? { ...i, status: decision } : i,
+        );
+        return {
+          ...prev,
+          review_items,
+          ready_to_post: review_items.every((i) => i.status === 'approved'),
+        };
+      });
+      await loadAudit();
+    } catch (e) {
+      setError(`Review update failed: ${e.message}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Print from the overview so every section ends up in the report.
+  const exportReport = () => {
+    setActive('overview');
+    setTimeout(() => window.print(), 150);
+  };
+
+  const stats = result?.stats || {};
+  const rows = result?.category_variance || [];
+  const reviews = result?.review_items || [];
+  const pendingCount = reviews.filter((r) => (r.status || 'pending') === 'pending').length;
+  const sectionLabel = NAV_ITEMS.find((n) => n.id === active)?.label;
+  const show = (id) => active === 'overview' || active === id;
+
+  return (
+    <div className="app">
+      <Sidebar active={active} onSelect={setActive} pendingCount={pendingCount} backend={backend} />
+
+      <div className="main">
+        <Topbar section={sectionLabel} />
+
+        <main className={`content ${loading ? 'is-loading' : ''}`} aria-busy={loading}>
+          {result && (
+            <div className="print-header">
+              <h1>AutoClose AI · Month-End Close Report</h1>
+              <p>
+                Generated {new Date().toLocaleString('en-GB')} ·{' '}
+                {result.ready_to_post ? 'Ready to post' : 'Pending human review'}
+              </p>
+            </div>
+          )}
+
+          <section className="hero">
+            <div>
+              <div className="eyebrow">
+                <Icon name="sparkle" size={13} /> AI-POWERED FINANCIAL CLOSE
+              </div>
+              <h1>{active === 'overview' ? 'Financial command center' : sectionLabel}</h1>
+              <p>Reconcile ledgers, investigate exceptions, and confidently close your books.</p>
+            </div>
+            <div className="hero-actions">
+              {result && (
+                <button type="button" className="btn ghost" onClick={exportReport}>
+                  <Icon name="printer" size={17} /> Export report
+                </button>
+              )}
+              <button type="button" className="btn primary" onClick={() => runClose(false)} disabled={loading}>
+                <Icon name={loading ? 'refresh' : 'sparkle'} size={17} className={loading ? 'spin' : ''} />
+                {loading ? 'Processing…' : result ? 'Re-run sample close' : 'Run sample close'}
+              </button>
+            </div>
+          </section>
+
+          {error && (
+            <div className="alert" role="alert">
+              <Icon name="alert" size={18} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {active === 'overview' && (
+            <>
+              <div className="metrics">
+                <MetricCard
+                  label="Transactions"
+                  icon="rows"
+                  tone="blue"
+                  loading={loading && !result}
+                  value={result ? Number(stats.total_transactions || 0).toLocaleString() : '—'}
+                  hint="Processed across ledgers"
+                />
+                <MetricCard
+                  label="Auto-matched"
+                  icon="check"
+                  tone="teal"
+                  loading={loading && !result}
+                  value={result ? `${stats.match_rate}%` : '—'}
+                  hint="Reconciliation match rate"
+                />
+                <MetricCard
+                  label="Needs review"
+                  icon="info"
+                  tone="amber"
+                  loading={loading && !result}
+                  value={result ? stats.needs_review : '—'}
+                  hint="Exceptions requiring action"
+                />
+                <MetricCard
+                  label="Net variance"
+                  icon="trend"
+                  tone="violet"
+                  loading={loading && !result}
+                  value={result ? money(stats.net_variance) : '—'}
+                  hint="Difference across ledgers"
+                />
+              </div>
+
+              <UploadPanel
+                fileA={fileA}
+                fileB={fileB}
+                onFileA={setFileA}
+                onFileB={setFileB}
+                onRun={() => runClose(true)}
+                loading={loading}
+              />
+            </>
+          )}
+
+          {!result && active !== 'audit' && (
+            loading ? (
+              <>
+                <PanelSkeleton title="Spend by category" lines={5} />
+                <PanelSkeleton title="AI close report" lines={4} />
+              </>
+            ) : (
+              <EmptyState onRun={() => runClose(false)} loading={loading} />
+            )
+          )}
+
+          {result && (
+            <>
+              {show('analytics') && (
+                <>
+                  <div className="grid two-one">
+                    <Panel
+                      title="Spend by category"
+                      subtitle="Ledger A compared with Ledger B"
+                      extra={<span className="tag">LIVE RESULTS</span>}
+                    >
+                      <SpendChart rows={rows} />
+                    </Panel>
+                    <Panel title="Match status" subtitle="How every transaction was reconciled">
+                      <MatchDonut reconciliation={result.reconciliation} stats={stats} />
+                    </Panel>
+                  </div>
+
+                  <div className="grid one-one">
+                    <Panel title="Variance by category" subtitle="Ledger B minus Ledger A">
+                      <VarianceChart rows={rows} />
+                    </Panel>
+                    <Panel title="Close readiness" subtitle="Approval status of flagged items">
+                      <ReadinessRing reviews={reviews} ready={result.ready_to_post} />
+                    </Panel>
+                  </div>
+
+                  <VarianceTable rows={rows} />
+                </>
+              )}
+
+              {show('summary') && <SummaryPanel summary={result.summary} />}
+
+              {show('reviews') && (
+                <ReviewQueue
+                  reviews={reviews}
+                  ready={result.ready_to_post}
+                  busyId={busyId}
+                  onDecide={decide}
+                />
+              )}
+            </>
+          )}
+
+          {show('audit') && <AuditTable audit={audit} onRefresh={loadAudit} />}
+
+          <footer className="footer">
+            AutoClose AI <span>·</span> Intelligent finance operations <span>·</span> Human-approved closing
+          </footer>
+        </main>
+      </div>
+    </div>
+  );
 }
